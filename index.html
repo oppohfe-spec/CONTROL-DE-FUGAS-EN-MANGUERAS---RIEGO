@@ -143,6 +143,8 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
 .history-title{font-weight:700;font-size:14px;}
 .history-sub{font-size:12.5px;color:var(--text-secondary);margin-top:2px;}
 .history-date{font-size:12px;color:var(--text-secondary);white-space:nowrap;}
+.history-top-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;}
+.history-edit-btn{padding:4px 9px;font-size:11.5px;white-space:nowrap;}
 .history-badges{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary);}
 .history-detail{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12.8px;color:var(--text-primary);}
 .history-detail div{margin-bottom:4px;}
@@ -178,8 +180,8 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
       </div>
     </div>
     <nav class="nav">
-      <button class="nav-btn active" data-view="dashboard-view"><span class="icon">📊</span> Dashboard</button>
-      <button class="nav-btn" data-view="form-view"><span class="icon">＋</span> Reportar Fuga</button>
+      <button class="nav-btn" data-view="dashboard-view"><span class="icon">📊</span> Dashboard</button>
+      <button class="nav-btn active" data-view="form-view"><span class="icon">＋</span> Reportar Fuga</button>
       <button class="nav-btn" data-view="history-view"><span class="icon">🗂</span> Historial</button>
     </nav>
     <div class="sidebar-footer">
@@ -193,7 +195,7 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
     <div id="dash-banner" class="banner info">Configura <code>SCRIPT_URL</code> en el HTML para conectar la app con tu Google Sheet. Mientras tanto, la ubicación y el diagnóstico funcionan con el catálogo incluido en el archivo, pero no se guardan registros nuevos.</div>
 
     <!-- ======================= DASHBOARD ======================= -->
-    <section id="dashboard-view" class="view active">
+    <section id="dashboard-view" class="view">
       <div class="page-title">
         <div>
           <h1>Dashboard — Fugas en mangueras de riego</h1>
@@ -235,11 +237,11 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
     </section>
 
     <!-- ======================= FORMULARIO ======================= -->
-    <section id="form-view" class="view">
+    <section id="form-view" class="view active">
       <div class="page-title">
         <div>
-          <h1>Reportar Fuga</h1>
-          <p>Registra la fuga detectada: ubicación, diagnóstico, materiales y observaciones.</p>
+          <h1 id="form-title">Reportar Fuga</h1>
+          <p id="form-subtitle">Registra la fuga detectada: ubicación, diagnóstico, materiales y observaciones.</p>
         </div>
       </div>
 
@@ -356,6 +358,7 @@ const INDICADORES = [
 let charts = {};
 let historyRenderedCount = 30;
 const HISTORY_PAGE_SIZE = 30;
+let EDITANDO_CODIGO = null; // CODIGO del registro que se está corrigiendo desde el Historial (null = registro nuevo)
 
 /* =============================================================
    NAVEGACIÓN
@@ -394,6 +397,34 @@ function guardarCache(){
 function formatearFechaHora(iso){
   try{ return new Date(iso).toLocaleString('es-PE', {dateStyle:'short', timeStyle:'short'}); }
   catch(e){ return iso || ''; }
+}
+
+// Formatea el campo FECHA de un registro para mostrarlo en pantalla, siempre
+// en hora de Perú, sin importar desde dónde se abra la app ni en qué formato
+// exacto haya quedado guardada la fecha:
+//  - "yyyy-MM-dd HH:mm:ss" (formato actual, ya en hora de Perú): se reformatea
+//    tal cual, como texto, sin ninguna conversión de zona horaria.
+//  - "yyyy-MM-dd" (registros antiguos, sin hora): se reformatea igual.
+//  - Cualquier otro valor (p.ej. un ISO con "Z" de una celda que Google
+//    Sheets llegó a convertir en fecha): se interpreta como instante y se
+//    muestra convertido a hora de Perú.
+function formatearFechaRegistro(valor){
+  if (!valor) return '—';
+  const s = String(valor).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s*$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  try{
+    return new Date(s).toLocaleString('es-PE', {timeZone:'America/Lima', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+  }catch(e){ return s; }
+}
+
+// Solo la parte "yyyy-MM-dd" de un valor de FECHA, para comparar contra los
+// filtros <input type="date"> (que siempre entregan "yyyy-MM-dd") sin que
+// importe si FECHA ya incluye hora.
+function soloFecha(valor){
+  return String(valor||'').slice(0,10);
 }
 
 /* =============================================================
@@ -565,7 +596,87 @@ function limpiarFormulario(){
   document.getElementById('sel-parcela').disabled = true;
   document.getElementById('sel-descripcion').innerHTML = '<option value="">Primero elige un tipo…</option>';
   document.getElementById('sel-descripcion').disabled = true;
+  salirModoEdicion();
   mostrarBannerForm('', '');
+}
+
+// Sale del modo "editar registro" y deja el formulario listo para uno nuevo.
+function salirModoEdicion(){
+  EDITANDO_CODIGO = null;
+  document.getElementById('form-title').textContent = 'Reportar Fuga';
+  document.getElementById('form-subtitle').textContent = 'Registra la fuga detectada: ubicación, diagnóstico, materiales y observaciones.';
+  document.getElementById('btn-registrar').textContent = 'Registrar';
+  document.getElementById('btn-whatsapp').textContent = '💬 Registrar y enviar por WhatsApp';
+}
+
+// Carga un registro existente en el formulario para corregirlo (botón
+// "Editar" del Historial). El CODIGO y la FECHA originales no se tocan.
+function editarRegistro(codigo){
+  const r = STATE.registros.find(x=>String(x.CODIGO)===String(codigo));
+  if (!r){ alert('No se encontró el registro ' + codigo + ' (puede que el Historial todavía no se haya actualizado — prueba con "Actualizar").'); return; }
+
+  // Cambia a la vista de Reportar Fuga
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelector('.nav-btn[data-view="form-view"]').classList.add('active');
+  document.getElementById('form-view').classList.add('active');
+  document.querySelector('.sidebar').classList.remove('open');
+
+  EDITANDO_CODIGO = r.CODIGO;
+
+  // Reportado por
+  const selRep = document.getElementById('sel-reportante');
+  const inpOtro = document.getElementById('inp-reportante-otro');
+  const estaEnCatalogo = [...selRep.options].some(o=>o.value === r.REPORTADO_POR);
+  if (estaEnCatalogo){
+    selRep.value = r.REPORTADO_POR;
+    inpOtro.style.display = 'none'; inpOtro.value = '';
+  } else {
+    selRep.value = '__otro__';
+    inpOtro.style.display = 'block'; inpOtro.value = r.REPORTADO_POR || '';
+  }
+
+  // Ubicación: Sector -> Parcela (dispara las cascadas ya cableadas en poblarFormularioCatalogos)
+  const selSector = document.getElementById('sel-sector');
+  selSector.value = r.SECTOR || '';
+  selSector.dispatchEvent(new Event('change'));
+  const selParcela = document.getElementById('sel-parcela');
+  selParcela.value = String(r.PARCELA);
+  selParcela.dispatchEvent(new Event('change'));
+
+  // Diagnóstico: Tipo -> Descripción
+  const selTipo = document.getElementById('sel-tipo');
+  selTipo.value = r.TIPO_FUGA || '';
+  selTipo.dispatchEvent(new Event('change'));
+  const selDesc = document.getElementById('sel-descripcion');
+  selDesc.value = r.DESCRIPCION_FUGA || '';
+
+  // Materiales
+  const wrap = document.getElementById('materiales-rows');
+  wrap.innerHTML = '';
+  const opciones = materialesCatalogo();
+  parseMateriales(r.MATERIALES).forEach(m=>{
+    agregarFilaMaterial(m.nombre); // ya preselecciona si el material está en el catálogo
+    const filas = wrap.querySelectorAll('.material-item');
+    const ultima = filas[filas.length - 1];
+    const sel = ultima.querySelector('.mat-select');
+    const otro = ultima.querySelector('.mat-otro');
+    if (!opciones.includes(m.nombre)){
+      sel.value = '__otro__';
+      otro.style.display = 'block';
+      otro.value = m.nombre;
+    }
+    ultima.querySelector('.mat-cantidad').value = m.cant || 1;
+  });
+
+  document.getElementById('inp-observaciones').value = r.OBSERVACIONES || '';
+
+  // Cabecera y botones en modo edición
+  document.getElementById('form-title').textContent = 'Editar Fuga — ' + r.CODIGO;
+  document.getElementById('form-subtitle').textContent = 'Corrige los datos del registro. El código y la fecha originales se conservan.';
+  document.getElementById('btn-registrar').textContent = 'Guardar cambios';
+  document.getElementById('btn-whatsapp').textContent = '💬 Guardar y enviar por WhatsApp';
+  mostrarBannerForm('Editando el registro ' + r.CODIGO + '. Presiona "Cancelar" para salir sin guardar.', 'info');
 }
 
 function mostrarBannerForm(msg, tipo){
@@ -613,10 +724,15 @@ async function enviarRegistro(conWhatsapp){
     reportado_por: reportante,
     observaciones: document.getElementById('inp-observaciones').value.trim()
   };
+  const editando = !!EDITANDO_CODIGO;
+  if (editando){
+    payload.accion = 'actualizar';
+    payload.codigo = EDITANDO_CODIGO;
+  }
 
   const btnA = document.getElementById('btn-registrar'), btnB = document.getElementById('btn-whatsapp');
   btnA.disabled = true; btnB.disabled = true;
-  mostrarBannerForm('Guardando registro…', 'info');
+  mostrarBannerForm(editando ? 'Guardando cambios…' : 'Guardando registro…', 'info');
 
   try{
     const res = await fetch(SCRIPT_URL, {
@@ -627,11 +743,22 @@ async function enviarRegistro(conWhatsapp){
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Error desconocido');
 
-    STATE.registros.unshift(json.registro);
+    if (editando){
+      const idx = STATE.registros.findIndex(x=>String(x.CODIGO)===String(json.registro.CODIGO));
+      if (idx !== -1) STATE.registros[idx] = json.registro; else STATE.registros.unshift(json.registro);
+    } else {
+      STATE.registros.unshift(json.registro);
+    }
     guardarCache();
-    mostrarBannerForm('✔ Registro ' + json.registro.CODIGO + ' guardado correctamente.', 'ok');
     if (conWhatsapp) abrirWhatsapp(json.registro);
-    limpiarFormularioParcial();
+
+    if (editando){
+      limpiarFormulario(); // sale del modo edición y limpia todo
+      mostrarBannerForm('✔ Registro ' + json.registro.CODIGO + ' actualizado correctamente.', 'ok');
+    } else {
+      mostrarBannerForm('✔ Registro ' + json.registro.CODIGO + ' guardado correctamente.', 'ok');
+      limpiarFormularioParcial();
+    }
     renderDashboard();
     renderHistorial(true);
   }catch(err){
@@ -660,7 +787,7 @@ function abrirWhatsapp(r){
     '📦 *Materiales:* ' + (r.MATERIALES ? r.MATERIALES : 'Sin materiales registrados'),
   ];
   if (r.OBSERVACIONES) lineas.push('🗒️ *Observaciones:* ' + r.OBSERVACIONES);
-  lineas.push('📅 *Fecha:* ' + r.FECHA + '  |  Semana ' + r.SEMANA + '  |  Temporada ' + r.TEMPORADA);
+  lineas.push('📅 *Fecha:* ' + formatearFechaRegistro(r.FECHA) + '  |  Semana ' + r.SEMANA + '  |  Temporada ' + r.TEMPORADA);
   const texto = encodeURIComponent(lineas.join('\n'));
   const base = WHATSAPP_NUMERO ? ('https://wa.me/' + WHATSAPP_NUMERO) : 'https://wa.me/';
   window.open(base + '?text=' + texto, '_blank');
@@ -724,8 +851,8 @@ function registrosFiltrados(){
   const reportante = document.getElementById('f-reportante').value;
   const temporada = document.getElementById('f-temporada').value;
   return STATE.registros.filter(r=>{
-    if (desde && r.FECHA < desde) return false;
-    if (hasta && r.FECHA > hasta) return false;
+    if (desde && soloFecha(r.FECHA) < desde) return false;
+    if (hasta && soloFecha(r.FECHA) > hasta) return false;
     if (sector && r.SECTOR !== sector) return false;
     if (tipo && r.TIPO_FUGA !== tipo) return false;
     if (reportante && r.REPORTADO_POR !== reportante) return false;
@@ -874,8 +1001,8 @@ function registrosHistorialFiltrados(){
   const sector = document.getElementById('h-sector').value;
   const tipo = document.getElementById('h-tipo').value;
   let arr = STATE.registros.filter(r=>{
-    if (desde && r.FECHA < desde) return false;
-    if (hasta && r.FECHA > hasta) return false;
+    if (desde && soloFecha(r.FECHA) < desde) return false;
+    if (hasta && soloFecha(r.FECHA) > hasta) return false;
     if (sector && r.SECTOR !== sector) return false;
     if (tipo && r.TIPO_FUGA !== tipo) return false;
     if (q){
@@ -917,7 +1044,10 @@ function renderHistorial(reset){
             <div class="history-title">${r.TIPO_FUGA||''} — Sector ${r.SECTOR||''} · Parcela ${r.PARCELA||''}</div>
             <div class="history-sub">${r.DESCRIPCION_FUGA||''}</div>
           </div>
-          <div class="history-date">${r.FECHA||''}</div>
+          <div class="history-top-right">
+            <div class="history-date">${formatearFechaRegistro(r.FECHA)}</div>
+            <button type="button" class="icon-btn history-edit-btn" title="Editar registro" onclick="event.stopPropagation(); editarRegistro('${String(r.CODIGO||'').replace(/'/g,"\\'")}')">✏️ Editar</button>
+          </div>
         </div>
         <div class="history-badges">
           <span>👤 ${r.REPORTADO_POR||'Sin dato'}</span>
