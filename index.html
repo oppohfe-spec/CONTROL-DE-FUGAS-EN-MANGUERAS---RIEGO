@@ -116,8 +116,12 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
 .filters-actions{display:flex;gap:8px;align-items:center;margin-left:auto;}
 .filters-actions .btn{padding:8px 14px;font-size:12.5px;}
 
-.indicators-toggle{display:flex;flex-wrap:wrap;gap:8px 18px;}
+.indicators-toggle{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;}
 .indicators-toggle label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-secondary);cursor:pointer;}
+.indicators-summary{font-size:15px;font-weight:700;cursor:pointer;list-style:none;user-select:none;display:flex;align-items:center;gap:7px;}
+.indicators-summary::-webkit-details-marker{display:none;}
+.indicators-summary::before{content:'▸';font-size:11px;color:var(--text-secondary);transition:transform .15s ease;}
+details[open] > .indicators-summary::before{content:'▾';}
 
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px;}
 .kpi-card{background:var(--bg-card);border-radius:var(--radius);padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.07);}
@@ -144,7 +148,10 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
 .history-sub{font-size:12.5px;color:var(--text-secondary);margin-top:2px;}
 .history-date{font-size:12px;color:var(--text-secondary);white-space:nowrap;}
 .history-top-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;}
-.history-edit-btn{padding:4px 9px;font-size:11.5px;white-space:nowrap;}
+.history-actions-row{display:flex;gap:6px;}
+.history-edit-btn,.history-delete-btn{padding:4px 9px;font-size:11.5px;white-space:nowrap;}
+.history-delete-btn{color:#a3271f;border-color:#f3c6c2;}
+.history-delete-btn:hover{background:#fdeceb;}
 .history-badges{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text-secondary);}
 .history-detail{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12.8px;color:var(--text-primary);}
 .history-detail div{margin-bottom:4px;}
@@ -212,6 +219,7 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
           <div class="field"><label>Reportado por</label><select id="f-reportante"><option value="">Todos</option></select></div>
           <div class="field"><label>Temporada</label><select id="f-temporada"><option value="">Todas</option></select></div>
           <div class="filters-actions">
+            <button class="btn btn-secondary" onclick="limpiarFiltrosDashboard()">✕ Limpiar filtros</button>
             <button class="btn btn-secondary" onclick="cargarDatos()">↻ Actualizar</button>
             <button class="btn btn-secondary" onclick="window.print()">🖨 Exportar / Imprimir</button>
           </div>
@@ -219,8 +227,10 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
       </div>
 
       <div class="card">
-        <h2>Indicadores a mostrar en el reporte</h2>
-        <div class="indicators-toggle" id="indicators-toggle"></div>
+        <details id="indicators-details">
+          <summary class="indicators-summary">Indicadores a mostrar en el reporte</summary>
+          <div class="indicators-toggle" id="indicators-toggle"></div>
+        </details>
       </div>
 
       <div class="kpi-row" id="kpi-row"></div>
@@ -287,7 +297,6 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
           <div class="actions">
             <button type="button" class="btn btn-secondary" onclick="limpiarFormulario()">Cancelar</button>
             <button type="button" class="btn btn-whatsapp" id="btn-whatsapp" onclick="enviarRegistro(true)">💬 Registrar y enviar por WhatsApp</button>
-            <button type="button" class="btn btn-primary" id="btn-registrar" onclick="enviarRegistro(false)">Registrar</button>
           </div>
         </div>
       </form>
@@ -311,6 +320,7 @@ button,select,input,textarea{font-family:inherit;font-size:14px;}
           <div class="field"><label>Tipo de fuga</label><select id="h-tipo"><option value="">Todos</option></select></div>
           <div class="filters-actions">
             <span class="count-badge" id="h-count">0 registros</span>
+            <button class="btn btn-secondary" onclick="limpiarFiltrosHistorial()">✕ Limpiar filtros</button>
             <button class="btn btn-secondary" onclick="cargarDatos()">↻ Actualizar</button>
           </div>
         </div>
@@ -613,7 +623,6 @@ function salirModoEdicion(){
   EDITANDO_CODIGO = null;
   document.getElementById('form-title').textContent = 'Reportar Fuga';
   document.getElementById('form-subtitle').textContent = 'Registra la fuga detectada: ubicación, diagnóstico, materiales y observaciones.';
-  document.getElementById('btn-registrar').textContent = 'Registrar';
   document.getElementById('btn-whatsapp').textContent = '💬 Registrar y enviar por WhatsApp';
 }
 
@@ -689,7 +698,6 @@ function editarRegistro(codigo){
   // Cabecera y botones en modo edición
   document.getElementById('form-title').textContent = 'Editar Fuga — ' + r.CODIGO;
   document.getElementById('form-subtitle').textContent = 'Corrige los datos del registro. El código y la fecha originales se conservan.';
-  document.getElementById('btn-registrar').textContent = 'Guardar cambios';
   document.getElementById('btn-whatsapp').textContent = '💬 Guardar y enviar por WhatsApp';
   mostrarBannerForm('Editando el registro ' + r.CODIGO + '. Presiona "Cancelar" para salir sin guardar.', 'info');
 }
@@ -747,8 +755,8 @@ async function enviarRegistro(conWhatsapp){
     payload.codigo = EDITANDO_CODIGO;
   }
 
-  const btnA = document.getElementById('btn-registrar'), btnB = document.getElementById('btn-whatsapp');
-  btnA.disabled = true; btnB.disabled = true;
+  const btnB = document.getElementById('btn-whatsapp');
+  btnB.disabled = true;
   mostrarBannerForm(editando ? 'Guardando cambios…' : 'Guardando registro…', 'info');
 
   try{
@@ -781,7 +789,7 @@ async function enviarRegistro(conWhatsapp){
   }catch(err){
     mostrarBannerForm('No se pudo guardar: ' + err.message, 'err');
   }finally{
-    btnA.disabled = false; btnB.disabled = false;
+    btnB.disabled = false;
   }
 }
 
@@ -858,6 +866,13 @@ function poblarFiltrosDashboard(){
   poblarSelectDesdeRegistros('f-tipo', 'TIPO_FUGA', 'Todos');
   poblarSelectDesdeRegistros('f-reportante', 'REPORTADO_POR', 'Todos');
   poblarSelectDesdeRegistros('f-temporada', 'TEMPORADA', 'Todas');
+}
+
+function limpiarFiltrosDashboard(){
+  ['f-desde','f-hasta','f-sector','f-tipo','f-reportante','f-temporada'].forEach(id=>{
+    document.getElementById(id).value = '';
+  });
+  renderDashboard();
 }
 
 function registrosFiltrados(){
@@ -1012,6 +1027,14 @@ function poblarFiltrosHistorial(){
   poblarSelectDesdeRegistros('h-tipo', 'TIPO_FUGA', 'Todos');
 }
 
+function limpiarFiltrosHistorial(){
+  document.getElementById('h-buscar').value = '';
+  ['h-desde','h-hasta','h-sector','h-tipo'].forEach(id=>{
+    document.getElementById(id).value = '';
+  });
+  renderHistorial(true);
+}
+
 function registrosHistorialFiltrados(){
   const q = document.getElementById('h-buscar').value.trim().toLowerCase();
   const desde = document.getElementById('h-desde').value;
@@ -1064,7 +1087,10 @@ function renderHistorial(reset){
           </div>
           <div class="history-top-right">
             <div class="history-date">${formatearFechaRegistro(r.FECHA)}</div>
-            <button type="button" class="icon-btn history-edit-btn" title="Editar registro" onclick="event.stopPropagation(); editarRegistro('${String(r.CODIGO||'').replace(/'/g,"\\'")}')">✏️ Editar</button>
+            <div class="history-actions-row">
+              <button type="button" class="icon-btn history-edit-btn" title="Editar registro" onclick="event.stopPropagation(); editarRegistro('${String(r.CODIGO||'').replace(/'/g,"\\'")}')">✏️ Editar</button>
+              <button type="button" class="icon-btn history-delete-btn" title="Eliminar registro" onclick="event.stopPropagation(); eliminarRegistro('${String(r.CODIGO||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>
+            </div>
           </div>
         </div>
         <div class="history-badges">
@@ -1092,6 +1118,36 @@ function cargarMasHistorial(){
 function toggleDetalleHistorial(card){
   const d = card.querySelector('.history-detail');
   d.style.display = d.style.display === 'none' ? 'block' : 'none';
+}
+
+// Elimina un registro (botón "🗑️ Eliminar" de la tarjeta del Historial).
+// Pide confirmación porque no se puede deshacer, y elimina la fila
+// correspondiente directamente en el Google Sheet.
+async function eliminarRegistro(codigo){
+  if (!confirm('¿Seguro que deseas eliminar el registro ' + codigo + '? Esta acción no se puede deshacer.')) return;
+
+  if (!SCRIPT_URL || SCRIPT_URL.indexOf('PEGA_AQUI') === 0){
+    alert('Falta configurar SCRIPT_URL en el código antes de poder eliminar registros.');
+    return;
+  }
+
+  try{
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'text/plain;charset=utf-8'}, // evita el preflight CORS en Apps Script
+      body: JSON.stringify({ accion: 'eliminar', codigo })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Error desconocido');
+
+    STATE.registros = STATE.registros.filter(r=>String(r.CODIGO) !== String(codigo));
+    guardarCache();
+    if (EDITANDO_CODIGO && String(EDITANDO_CODIGO) === String(codigo)) limpiarFormulario();
+    renderDashboard();
+    renderHistorial(false);
+  }catch(err){
+    alert('No se pudo eliminar el registro ' + codigo + ': ' + err.message);
+  }
 }
 
 /* =============================================================
