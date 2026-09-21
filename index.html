@@ -546,17 +546,13 @@ function poblarFormularioCatalogos(){
     }
     selDesc.disabled = false;
     selDesc.innerHTML = '<option value="">Selecciona…</option>' + items.map(f=>`<option value="${f.DESCRIPCION}">${f.DESCRIPCION}</option>`).join('');
-    selDesc.onchange = ()=>{
-      const item = items.find(f=>f.DESCRIPCION===selDesc.value);
-      // Sugiere automáticamente un material si el catálogo tiene uno asociado a esta falla
-      if (document.getElementById('materiales-rows').children.length === 0){
-        agregarFilaMaterial(item && item.MATERIAL);
-      }
-    };
+    selDesc.onchange = null; // el material ya no se autosugiere: se agrega manualmente con "+ Agregar material"
   };
 }
 
-/* Filas de materiales (selección + cantidad, repetible) */
+/* Filas de materiales (selección + cantidad, repetible).
+   El listado de materiales SIEMPRE empieza vacío — el usuario agrega cada
+   fila a mano con "+ Agregar material", nunca se precarga una por defecto. */
 function agregarFilaMaterial(preseleccion){
   const wrap = document.getElementById('materiales-rows');
   const opciones = materialesCatalogo();
@@ -567,20 +563,32 @@ function agregarFilaMaterial(preseleccion){
     <div class="material-row">
       <select class="mat-select">
         <option value="">Selecciona un material…</option>
+        <option value="__sin_material__">SIN MATERIAL</option>
         ${opciones.map(o=>`<option value="${o}"${o===seleccionValida?' selected':''}>${o}</option>`).join('')}
         <option value="__otro__">Otro (especificar)</option>
       </select>
-      <input type="number" min="1" value="1" class="mat-cantidad">
+      <input type="number" min="0" value="1" class="mat-cantidad">
       <button type="button" class="icon-btn" onclick="this.closest('.material-item').remove()">✕</button>
     </div>
     <input type="text" class="mat-otro" placeholder="Especifica el material" style="display:none;">
   `;
   const sel = item.querySelector('.mat-select');
   const otro = item.querySelector('.mat-otro');
+  const cant = item.querySelector('.mat-cantidad');
   sel.addEventListener('change', ()=>{
     const esOtro = sel.value === '__otro__';
     otro.style.display = esOtro ? 'block' : 'none';
     if (!esOtro) otro.value = '';
+
+    // SIN MATERIAL -> cantidad fija en 0 (no aplica cantidad); cualquier
+    // material real u "Otro" -> cantidad por defecto 1.
+    if (sel.value === '__sin_material__'){
+      cant.value = 0;
+      cant.disabled = true;
+    } else {
+      cant.disabled = false;
+      if (Number(cant.value) === 0) cant.value = 1;
+    }
   });
   wrap.appendChild(item);
 }
@@ -661,12 +669,19 @@ function editarRegistro(codigo){
     const ultima = filas[filas.length - 1];
     const sel = ultima.querySelector('.mat-select');
     const otro = ultima.querySelector('.mat-otro');
-    if (!opciones.includes(m.nombre)){
+    const cant = ultima.querySelector('.mat-cantidad');
+    if (m.nombre === 'SIN MATERIAL'){
+      sel.value = '__sin_material__';
+      cant.value = 0;
+      cant.disabled = true;
+    } else if (!opciones.includes(m.nombre)){
       sel.value = '__otro__';
       otro.style.display = 'block';
       otro.value = m.nombre;
+      cant.value = m.cant || 1;
+    } else {
+      cant.value = m.cant || 1;
     }
-    ultima.querySelector('.mat-cantidad').value = m.cant || 1;
   });
 
   document.getElementById('inp-observaciones').value = r.OBSERVACIONES || '';
@@ -707,6 +722,8 @@ async function enviarRegistro(conWhatsapp){
 
   const materiales = [...document.querySelectorAll('#materiales-rows .material-item')].map(item=>{
     const selVal = item.querySelector('.mat-select').value;
+    if (!selVal) return null; // fila agregada pero sin seleccionar nada todavía
+    if (selVal === '__sin_material__') return 'SIN MATERIAL';
     const otro = item.querySelector('.mat-otro').value.trim();
     const nombre = selVal === '__otro__' ? otro : selVal;
     const cant = item.querySelector('.mat-cantidad').value || '1';
@@ -965,13 +982,14 @@ function parseMateriales(campo){
   if (!campo) return [];
   return String(campo).split(';').map(part=>{
     const t = part.trim(); if (!t) return null;
+    if (/^SIN MATERIAL$/i.test(t)) return {nombre: 'SIN MATERIAL', cant: 0};
     const match = t.match(/^(.*)\sx\s(\d+)$/i);
     return match ? {nombre: match[1].trim(), cant: parseInt(match[2],10)} : {nombre: t, cant: 1};
   }).filter(Boolean);
 }
 function renderChartMateriales(datos){
   const m = {};
-  datos.forEach(r=>{ parseMateriales(r.MATERIALES).forEach(({nombre,cant})=>{ m[nombre] = (m[nombre]||0) + cant; }); });
+  datos.forEach(r=>{ parseMateriales(r.MATERIALES).forEach(({nombre,cant})=>{ if (nombre==='SIN MATERIAL') return; m[nombre] = (m[nombre]||0) + cant; }); });
   const entries = sortedEntries(m, 10);
   const canvasWrap = document.getElementById('wrap-materiales');
   if (entries.length === 0){
@@ -1033,7 +1051,7 @@ function renderHistorial(reset){
 
   const visibles = filtrados.slice(0, historyRenderedCount);
   list.innerHTML = visibles.map(r=>{
-    const materiales = parseMateriales(r.MATERIALES);
+    const materiales = parseMateriales(r.MATERIALES).filter(m=>m.nombre !== 'SIN MATERIAL');
     const color = colorForKey(r.SECTOR, sectoresOrden);
     return `
     <div class="history-card" onclick="toggleDetalleHistorial(this)">
