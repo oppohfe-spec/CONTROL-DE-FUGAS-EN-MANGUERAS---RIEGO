@@ -157,6 +157,47 @@ details[open] > .indicators-summary::before{content:'▾';}
 .history-detail div{margin-bottom:4px;}
 .history-empty{text-align:center;padding:50px 0;color:#a7a9b2;font-size:13px;}
 
+/* ---------- mapa de parcelas ---------- */
+.map-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,1fr);gap:14px;align-items:start;}
+.map-card{background:var(--bg-card);border-radius:var(--radius);box-shadow:0 1px 3px rgba(0,0,0,.07);padding:16px 18px;}
+.map-card h3{font-size:13.5px;font-weight:700;margin-bottom:10px;}
+.map-scroll{overflow:auto;-webkit-overflow-scrolling:touch;}
+.map-scroll svg{width:100%;min-width:560px;height:auto;display:block;}
+.map-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;}
+.map-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--text-secondary);margin-bottom:10px;}
+.map-legend .sw{width:14px;height:14px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-2px;border:1px solid rgba(0,0,0,.1);}
+.map-cell{cursor:pointer;}
+.map-cell:hover rect{filter:brightness(.9);}
+.umbrales{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:12.5px;color:var(--text-secondary);}
+.umbrales b{color:var(--text-primary);}
+.umbrales input{width:62px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;}
+.rank-wrap{max-height:420px;overflow:auto;}
+.rank-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.rank-table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--text-secondary);padding:6px 6px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;}
+.rank-table td{padding:7px 6px;border-bottom:1px solid #f0f1f3;}
+.rank-table tr{cursor:pointer;}
+.rank-table tbody tr:hover{background:#f7f8fa;}
+.rank-table tr.sel{background:#eaf1fc;}
+.rank-table td.num{text-align:right;font-weight:700;}
+.nivel-pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
+.chips{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:11.5px;cursor:pointer;}
+.det-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px;}
+.det-title{font-size:15px;font-weight:700;}
+.det-sub{font-size:12px;color:var(--text-secondary);}
+.det-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+.det-grid div{background:var(--bg-primary);border-radius:8px;padding:8px 10px;}
+.det-grid .l{font-size:10.5px;text-transform:uppercase;color:var(--text-secondary);letter-spacing:.3px;}
+.det-grid .v{font-size:16px;font-weight:700;}
+.det-list{font-size:12.3px;}
+.det-list .it{padding:7px 0;border-top:1px solid #f0f1f3;}
+.det-list .it .t{font-weight:600;}
+.det-list .it .s{color:var(--text-secondary);}
+@media (max-width:1100px){
+  .map-layout{grid-template-columns:1fr;}
+  .map-side{position:static;max-height:none;overflow:visible;}
+}
+
 @media (max-width:900px){
   .sidebar{transform:translateX(-100%);}
   .sidebar.open{transform:translateX(0);}
@@ -190,6 +231,7 @@ details[open] > .indicators-summary::before{content:'▾';}
       <button class="nav-btn" data-view="dashboard-view"><span class="icon">📊</span> Dashboard</button>
       <button class="nav-btn active" data-view="form-view"><span class="icon">＋</span> Reportar Fuga</button>
       <button class="nav-btn" data-view="history-view"><span class="icon">🗂</span> Historial</button>
+      <button class="nav-btn" data-view="map-view"><span class="icon">🗺</span> Mapa de parcelas</button>
     </nav>
     <div class="sidebar-footer">
       <b>Cómo se usa</b>
@@ -329,6 +371,57 @@ details[open] > .indicators-summary::before{content:'▾';}
       <div id="history-list"></div>
       <div style="text-align:center;margin-top:6px;">
         <button class="btn btn-secondary" id="btn-cargar-mas" style="display:none;" onclick="cargarMasHistorial()">Cargar más</button>
+      </div>
+    </section>
+
+    <!-- ======================= MAPA DE PARCELAS ======================= -->
+    <section id="map-view" class="view">
+      <div class="page-title">
+        <div>
+          <h1>Mapa de parcelas intervenidas</h1>
+          <p id="map-subtitle">Criticidad según el número de intervenciones (fugas reparadas) por parcela</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="filters-bar">
+          <div class="field"><label>Desde</label><input type="date" id="m-desde"></div>
+          <div class="field"><label>Hasta</label><input type="date" id="m-hasta"></div>
+          <div class="field"><label>Temporada</label><select id="m-temporada"><option value="">Todas</option></select></div>
+          <div class="field"><label>Semana</label><select id="m-semana"><option value="">Todas</option></select></div>
+          <div class="field"><label>Sector</label><select id="m-sector"><option value="">Todos</option></select></div>
+          <div class="field"><label>Tipo de fuga</label><select id="m-tipo"><option value="">Todos</option></select></div>
+          <div class="filters-actions">
+            <button class="btn btn-secondary" onclick="limpiarFiltrosMapa()">✕ Limpiar filtros</button>
+            <button class="btn btn-secondary" onclick="cargarDatos()">↻ Actualizar</button>
+            <button class="btn btn-secondary" onclick="window.print()">🖨 Imprimir</button>
+          </div>
+        </div>
+        <div class="umbrales">
+          <b>Umbrales de criticidad (n° de intervenciones):</b>
+          <label>Media desde <input type="number" min="2" id="u-media"></label>
+          <label>Alta desde <input type="number" min="3" id="u-alta"></label>
+          <label>Crítica desde <input type="number" min="4" id="u-critica"></label>
+          <span id="u-msg"></span>
+        </div>
+      </div>
+
+      <div class="kpi-row" id="map-kpis"></div>
+
+      <div class="map-layout">
+        <div class="map-card">
+          <h3>Plano de parcelas — Fundo Olmos</h3>
+          <div class="map-legend" id="map-legend"></div>
+          <div class="map-scroll" id="map-svg-wrap"></div>
+          <div id="map-fuera" style="margin-top:12px;"></div>
+        </div>
+        <div class="map-side">
+          <div class="map-card" id="map-detail"></div>
+          <div class="map-card">
+            <h3>Ranking de parcelas intervenidas</h3>
+            <div class="rank-wrap" id="map-ranking"></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -914,6 +1007,8 @@ function renderDashboard(){
   renderChartTendencia(datos);
   renderChartDescripcion(datos);
   renderChartMateriales(datos);
+  // El mapa de parcelas se refresca junto con el dashboard (carga, registro, edición, eliminación).
+  try{ renderMapa(); }catch(e){ console.error('Mapa de parcelas:', e); }
 }
 
 function renderKPIs(datos){
@@ -1151,6 +1246,359 @@ async function eliminarRegistro(codigo){
 }
 
 /* =============================================================
+   MAPA DE PARCELAS — criticidad de intervenciones
+   El plano reproduce la distribución del fundo (imagen de ubicación de
+   parcelas). Cada celda es [sector, parcela, x inicial, x final, fila].
+   Si en el futuro se agregan parcelas que no están dibujadas, aparecen
+   igual debajo del plano en "Parcelas sin posición en el plano".
+   ============================================================= */
+const UMBRALES_KEY = 'cf_riego_umbrales_v1';
+const UMBRALES_DEFAULT = {media:3, alta:6, critica:10};
+let MAPA_UMBRALES = (()=>{
+  try{ const u = JSON.parse(localStorage.getItem(UMBRALES_KEY)); if (u && u.media && u.alta && u.critica) return u; }catch(e){}
+  return {...UMBRALES_DEFAULT};
+})();
+let MAPA_SEL = null; // {sector, parcela}
+
+const NIVELES = [
+  {key:'sin',     label:'Sin intervención', color:'#eceef2', text:'#8a8d96'},
+  {key:'baja',    label:'Baja',             color:'#86cf87', text:'#0f3a12'},
+  {key:'media',   label:'Media',            color:'#fab219', text:'#3d2a00'},
+  {key:'alta',    label:'Alta',             color:'#ec835a', text:'#3a1405'},
+  {key:'critica', label:'Crítica',          color:'#d03b3b', text:'#ffffff'},
+];
+function nivelCriticidad(n){
+  const u = MAPA_UMBRALES;
+  if (!n) return NIVELES[0];
+  if (n >= u.critica) return NIVELES[4];
+  if (n >= u.alta) return NIVELES[3];
+  if (n >= u.media) return NIVELES[2];
+  return NIVELES[1];
+}
+// "5.10." (texto en la hoja para que no se vuelva 5.1) -> "5.10"; 1.1 (número) -> "1.1"
+function claveParcela(p){ return String(p == null ? '' : p).trim().replace(/\.+$/,''); }
+function escHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const MAPA_Y0 = 40, MAPA_FH = 36;
+const mapaY = f => MAPA_Y0 + f * MAPA_FH;
+const MAPA_CELDAS = [];
+function _c(sector, parcela, x1, x2, fila, filas, etiqueta){
+  MAPA_CELDAS.push({sector, parcela:String(parcela), x1, x2, fila, filas:filas||1, etiqueta:etiqueta||String(parcela)});
+}
+function _col(sector, x1, x2, filaIni, parcelas){ parcelas.forEach((p,i)=>{ if (p) _c(sector, p, x1, x2, filaIni+i); }); }
+
+// ---- OLMOS 1 · EQUIPO 1 ----
+_c('O1E1','5.2',270,400,8); _c('O1E1','5.3',400,478,8);
+_c('O1E1','5.1',230,400,9); _c('O1E1','5.4',400,558,9);
+_col('O1E1',210,297,10,['4.7','4.6','3.7','2.7','1.9','1.8','1.7','1.6']);
+_col('O1E1',297,400,10,['4.7','4.5','3.6','3.5','2.6','2.5','1.5','1.4']);
+_col('O1E1',400,558,10,['4.4','4.3','3.4','3.3','2.4','2.3','1.3','1.1']);
+_col('O1E1',558,685,8,['5.5','5.6','4.2','4.1','3.2','3.1','2.2','2.1']);
+_c('O1E1','1.2',558,685,16,2);
+// ---- OLMOS 1 · EQUIPO 2 ----
+_col('O1E2',562,685,1,['3.1','3.2','3.3','3.4','3.5','3.6','3.7']);
+_col('O1E2',685,790,0,['5.8','5.5','5.4','5.1','4.8','4.5','4.4','4.1','2.7','2.6','2.3','2.2','1.8','1.7','1.4','1.3','1.1']);
+_col('O1E2',790,890,0,['5.7','5.6','5.3','5.2','4.7','4.6','4.3','4.2','2.8','2.5','2.4','2.1','1.9','1.6','1.5','1.2']);
+// ---- OLMOS 2 · EQUIPO 1 ----
+_col('O2E1',230,400,19,['5.5','5.4','5.1','4.5','4.4','4.1','3.6','3.3','3.2','2.6','2.3','2.2','1.5','1.4','1.1']);
+_col('O2E1',400,558,19,['5.6','5.3','5.2','4.6','4.3','4.2','3.5','3.4','3.1','2.5','2.4','2.1','1.6','1.3','1.2']);
+// ---- OLMOS 2 · EQUIPO 2 ----
+_c('O2E2','5.8',595,685,20); _c('O2E2','5.7',685,880,20);
+_c('O2E2','5.4',595,685,21); _c('O2E2','5.5',685,790,21); _c('O2E2','5.6',790,870,21);
+_c('O2E2','5.2',685,790,22); _c('O2E2','5.1',790,860,22);
+_c('O2E2','4.7',685,790,23); _c('O2E2','4.8',790,850,23);
+_c('O2E2','4.5',630,685,24); _c('O2E2','4.4',685,840,24);
+_c('O2E2','4.2',630,685,25); _c('O2E2','4.3',685,830,25);
+_c('O2E2','4.1',630,685,26); _c('O2E2','3.6',685,815,26);
+_c('O2E2','3.4',630,685,27); _c('O2E2','3.5',685,805,27);
+_c('O2E2','3.3',562,685,28); _c('O2E2','3.2',685,790,28);
+_c('O2E2','3.1',562,685,29); _c('O2E2','2.6',685,785,29);
+_c('O2E2','2.4',562,685,30); _c('O2E2','2.5',685,775,30);
+_c('O2E2','2.3',562,685,31); _c('O2E2','2.2',685,790,31);
+_c('O2E2','1.5',562,685,32); _c('O2E2','2.1',685,820,32);
+_c('O2E2','1.4',562,685,33); _c('O2E2','1.3',685,845,33);
+_c('O2E2','1.1',562,685,34); _c('O2E2','1.2',685,790,34); _c('O2E2','6.1',790,850,34);
+_c('O2E2','6.3',685,790,35); _c('O2E2','6.2',790,880,35);
+_c('O2E2','6.7',562,685,36); _c('O2E2','6.6',685,790,36); _c('O2E2','6.5',790,895,36);
+_c('O2E2','6.8',790,900,37);
+_c('O2E2','6.9',790,965,38);
+// ---- OLMOS 3 · EQUIPO 1 ----
+_col('O3E1',230,400,34,['2.1','2.2','2.3','3.4','3.5','4.4','4.5','5.1']);
+_col('O3E1',400,558,34,['1.1','1.2','1.3','3.1','3.2']);
+_c('O3E1','4.1',400,480,39); _c('O3E1','3.3',480,558,39);
+_c('O3E1','4.2',400,558,40); _c('O3E1','4.3',400,558,41);
+_c('O3E1','5.2',297,400,42); _c('O3E1','5.4',400,558,42);
+_c('O3E1','5.3',330,400,43); _c('O3E1','5.5',400,480,43);
+_col('O3E1',480,558,44,['5.8','5.9','5.10','5.11']);
+// ---- OLMOS 3 · EQUIPO 2 ----
+_c('O3E2','1.1',562,685,37); _c('O3E2','1.2',685,790,37);
+_c('O3E2','1.3',562,685,38); _c('O3E2','1.4',685,790,38);
+_c('O3E2','2.3',562,685,39); _c('O3E2','2.2',685,790,39); _c('O3E2','2.1',790,890,39);
+_c('O3E2','2.6',562,685,40); _c('O3E2','2.5',685,790,40); _c('O3E2','2.4',790,890,40);
+_c('O3E2','2.7',562,685,41); _c('O3E2','3.3',685,790,41); _c('O3E2','3.2',790,893,41); _c('O3E2','3.1',893,990,41);
+[['3.6','3.5',42],['3.8','3.7',43],['3.11','3.13',44]].forEach(([a,b,f])=>{
+  _c('O3E2',a,562,623,f,1,a+'V1'); _c('O3E2',a,623,685,f,1,a+'V2');
+  _c('O3E2',b,685,737,f,1,b+'V1'); _c('O3E2',b,737,790,f,1,b+'V2');
+});
+_c('O3E2','3.9',790,893,44);
+_c('O3E2','3.12',562,685,45); _c('O3E2','5.1',685,880,45);
+_c('O3E2','4.2',562,685,46); _c('O3E2','5.2',685,850,46);
+_c('O3E2','6.5',562,685,47); _c('O3E2','5.3',685,820,47);
+_c('O3E2','6.4',562,685,48); _c('O3E2','6.1',685,790,48);
+_c('O3E2','6.3',640,685,49); _c('O3E2','6.2',685,760,49);
+
+// Referencias del plano (no son parcelas)
+const MAPA_REFERENCIAS = [
+  {txt:'PACKING', x1:330, x2:550, fila:2, filas:5},
+  {txt:'RESERVORIO', x1:562, x2:630, fila:20, filas:8, vertical:true},
+  {txt:'R2', x1:630, x2:685, fila:22, filas:2},
+  {txt:'VIVERO', x1:562, x2:685, fila:35, filas:1},
+  {txt:'CASAS', x1:790, x2:960, fila:42, filas:2},
+  {txt:'CASAS', x1:480, x2:558, fila:43, filas:1},
+];
+// Líneas gruesas de división entre equipos
+const MAPA_DIVISIONES = [
+  [[560,mapaY(1)],[560,mapaY(8)],[685,mapaY(8)],[685,mapaY(18)]],
+  [[560,mapaY(19)],[560,mapaY(50)]],
+  [[230,mapaY(34)],[558,mapaY(34)]],
+  [[562,mapaY(37)],[790,mapaY(37)],[790,mapaY(39)],[965,mapaY(39)]],
+];
+const MAPA_ETIQUETAS = [
+  {txt:'OLMOS 1 · EQUIPO 1', x:180, y:mapaY(13), rot:-90},
+  {txt:'OLMOS 1 · EQUIPO 2', x:920, y:mapaY(8.5), rot:90},
+  {txt:'OLMOS 2 · EQUIPO 1', x:200, y:mapaY(26.5), rot:-90},
+  {txt:'OLMOS 2 · EQUIPO 2', x:905, y:mapaY(28), rot:90},
+  {txt:'OLMOS 3 · EQUIPO 1', x:200, y:mapaY(40), rot:-90},
+  {txt:'OLMOS 3 · EQUIPO 2', x:900, y:mapaY(46.6), rot:0, anchor:'start'},
+];
+
+function leerUmbralesUI(){
+  const media = parseInt(document.getElementById('u-media').value,10);
+  const alta = parseInt(document.getElementById('u-alta').value,10);
+  const critica = parseInt(document.getElementById('u-critica').value,10);
+  const msg = document.getElementById('u-msg');
+  if (!(media >= 2 && alta > media && critica > alta)){
+    msg.textContent = '⚠ Deben ser crecientes (Media ≥ 2 < Alta < Crítica)';
+    msg.style.color = '#a3271f';
+    return;
+  }
+  msg.textContent = '';
+  MAPA_UMBRALES = {media, alta, critica};
+  try{ localStorage.setItem(UMBRALES_KEY, JSON.stringify(MAPA_UMBRALES)); }catch(e){}
+  renderMapa();
+}
+function pintarUmbralesUI(){
+  document.getElementById('u-media').value = MAPA_UMBRALES.media;
+  document.getElementById('u-alta').value = MAPA_UMBRALES.alta;
+  document.getElementById('u-critica').value = MAPA_UMBRALES.critica;
+}
+
+function poblarFiltrosMapa(){
+  poblarSelectDesdeRegistros('m-temporada', 'TEMPORADA', 'Todas');
+  poblarSelectDesdeRegistros('m-tipo', 'TIPO_FUGA', 'Todos');
+  const selS = document.getElementById('m-sector');
+  const curS = selS.value;
+  const sectores = [...new Set([...STATE.ubicaciones.map(u=>u.SECTOR), ...STATE.registros.map(r=>r.SECTOR)].filter(Boolean))].sort();
+  selS.innerHTML = '<option value="">Todos</option>' + sectores.map(s=>`<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
+  selS.value = curS;
+  const selW = document.getElementById('m-semana');
+  const curW = selW.value;
+  const semanas = [...new Set(STATE.registros.map(r=>String(r.SEMANA||'')).filter(Boolean))].sort((a,b)=>Number(a)-Number(b));
+  selW.innerHTML = '<option value="">Todas</option>' + semanas.map(s=>`<option value="${s}">Semana ${s}</option>`).join('');
+  selW.value = curW;
+}
+function limpiarFiltrosMapa(){
+  ['m-desde','m-hasta','m-temporada','m-semana','m-sector','m-tipo'].forEach(id=>{ document.getElementById(id).value = ''; });
+  renderMapa();
+}
+function registrosMapa(){
+  const desde = document.getElementById('m-desde').value;
+  const hasta = document.getElementById('m-hasta').value;
+  const temporada = document.getElementById('m-temporada').value;
+  const semana = document.getElementById('m-semana').value;
+  const sector = document.getElementById('m-sector').value;
+  const tipo = document.getElementById('m-tipo').value;
+  return STATE.registros.filter(r=>{
+    if (desde && soloFecha(r.FECHA) < desde) return false;
+    if (hasta && soloFecha(r.FECHA) > hasta) return false;
+    if (temporada && r.TEMPORADA !== temporada) return false;
+    if (semana && String(r.SEMANA) !== semana) return false;
+    if (sector && r.SECTOR !== sector) return false;
+    if (tipo && r.TIPO_FUGA !== tipo) return false;
+    return true;
+  });
+}
+function agregarPorParcela(datos){
+  const m = {};
+  datos.forEach(r=>{
+    const p = claveParcela(r.PARCELA);
+    if (!r.SECTOR || !p) return;
+    const k = r.SECTOR + '|' + p;
+    (m[k] = m[k] || {sector:r.SECTOR, parcela:p, registros:[]}).registros.push(r);
+  });
+  Object.values(m).forEach(g=>g.registros.sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||''))));
+  return m;
+}
+function ubicacionDe(sector, parcela){
+  return STATE.ubicaciones.find(u=>u.SECTOR===sector && claveParcela(u.PARCELA)===parcela);
+}
+
+function renderMapa(){
+  if (!document.getElementById('map-view')) return;
+  poblarFiltrosMapa();
+  pintarUmbralesUI();
+  const sectorFiltro = document.getElementById('m-sector').value;
+  const datos = registrosMapa();
+  const agg = agregarPorParcela(datos);
+  const grupos = Object.values(agg).sort((a,b)=>b.registros.length-a.registros.length || a.sector.localeCompare(b.sector) || a.parcela.localeCompare(b.parcela, undefined, {numeric:true}));
+
+  // KPIs
+  const totalCatalogo = new Set(STATE.ubicaciones.filter(u=>!sectorFiltro || u.SECTOR===sectorFiltro).map(u=>u.SECTOR+'|'+claveParcela(u.PARCELA))).size;
+  const porNivel = {};
+  grupos.forEach(g=>{ const n = nivelCriticidad(g.registros.length).key; porNivel[n] = (porNivel[n]||0)+1; });
+  const top = grupos[0];
+  const pct = totalCatalogo ? Math.round(grupos.length*100/totalCatalogo) : 0;
+  document.getElementById('map-kpis').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Parcelas intervenidas</div><div class="kpi-value">${grupos.length}</div><div class="kpi-sub">de ${totalCatalogo} parcelas (${pct}%)</div></div>
+    <div class="kpi-card"><div class="kpi-label">Intervenciones</div><div class="kpi-value">${datos.length}</div><div class="kpi-sub">registros de fuga en el periodo</div></div>
+    <div class="kpi-card"><div class="kpi-label">Parcelas en Alta / Crítica</div><div class="kpi-value" style="color:${(porNivel.critica||0) ? NIVELES[4].color : 'inherit'}">${(porNivel.alta||0) + (porNivel.critica||0)}</div><div class="kpi-sub">${porNivel.critica||0} crítica(s) · ${porNivel.alta||0} alta(s)</div></div>
+    <div class="kpi-card"><div class="kpi-label">Parcela más intervenida</div><div class="kpi-value" style="font-size:19px;">${top ? escHtml(top.sector+' · '+top.parcela) : '—'}</div><div class="kpi-sub">${top ? top.registros.length+' intervenciones' : 'sin registros'}</div></div>
+  `;
+  document.getElementById('map-subtitle').textContent = datos.length + ' intervenciones en ' + grupos.length + ' parcelas — criticidad según n° de intervenciones por parcela';
+
+  // Leyenda
+  const u = MAPA_UMBRALES;
+  const rangos = ['0', '1' + (u.media-1 > 1 ? '–'+(u.media-1) : ''), u.media + (u.alta-1 > u.media ? '–'+(u.alta-1) : ''), u.alta + (u.critica-1 > u.alta ? '–'+(u.critica-1) : ''), '≥ ' + u.critica];
+  document.getElementById('map-legend').innerHTML = NIVELES.map((n,i)=>`<span><span class="sw" style="background:${n.color}"></span>${n.label} (${rangos[i]})</span>`).join('');
+
+  // Plano SVG
+  let svg = `<svg viewBox="140 20 950 1850" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,Roboto,sans-serif">`;
+  svg += `<line x1="215" y1="${mapaY(18.45)}" x2="890" y2="${mapaY(18.45)}" stroke="#3cc7e0" stroke-width="4" stroke-linecap="round"><title>Canal</title></line>`;
+  MAPA_REFERENCIAS.forEach(r=>{
+    const y1 = mapaY(r.fila), h = r.filas*MAPA_FH, cx = (r.x1+r.x2)/2, cy = y1 + h/2;
+    svg += `<rect x="${r.x1+1}" y="${y1+1}" width="${r.x2-r.x1-2}" height="${h-2}" rx="3" fill="#f6f7f9" stroke="#c9ccd3" stroke-dasharray="4 3"/>`;
+    svg += `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-size="${r.vertical?10:12}" font-weight="700" fill="#9a9ca3" ${r.vertical?`transform="rotate(90 ${cx} ${cy})"`:''}>${r.txt}</text>`;
+  });
+  MAPA_CELDAS.forEach(c=>{
+    const k = c.sector + '|' + c.parcela;
+    const n = agg[k] ? agg[k].registros.length : 0;
+    const nv = nivelCriticidad(n);
+    const y1 = mapaY(c.fila), h = c.filas*MAPA_FH, w = c.x2-c.x1, cx = c.x1 + w/2, cy = y1 + h/2;
+    const sel = MAPA_SEL && MAPA_SEL.sector===c.sector && MAPA_SEL.parcela===c.parcela;
+    const dim = sectorFiltro && sectorFiltro !== c.sector;
+    const fs = w < 60 ? 10 : 12;
+    svg += `<g class="map-cell" opacity="${dim ? .22 : 1}" onclick="seleccionarParcela('${c.sector}','${c.parcela}')">`
+      + `<title>${c.sector} · Parcela ${c.etiqueta} — ${n} intervención(es) · ${nv.label}</title>`
+      + `<rect x="${c.x1+1}" y="${y1+1}" width="${w-2}" height="${h-2}" rx="3" fill="${nv.color}" stroke="${sel ? '#12172b' : '#ffffff'}" stroke-width="${sel ? 3 : 1}"/>`
+      + (n
+          ? `<text x="${cx}" y="${cy-6}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-weight="700" fill="${nv.text}">${c.etiqueta}</text>`
+            + `<text x="${cx}" y="${cy+8}" text-anchor="middle" dominant-baseline="central" font-size="10" fill="${nv.text}">${n} int.</text>`
+          : `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" fill="${nv.text}">${c.etiqueta}</text>`)
+      + `</g>`;
+  });
+  MAPA_DIVISIONES.forEach(pts=>{
+    svg += `<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#12172b" stroke-width="3" stroke-linejoin="round"/>`;
+  });
+  MAPA_ETIQUETAS.forEach(e=>{
+    svg += `<text x="${e.x}" y="${e.y}" text-anchor="${e.anchor||'middle'}" dominant-baseline="central" font-size="16" font-weight="800" fill="#12172b" letter-spacing=".5" ${e.rot?`transform="rotate(${e.rot} ${e.x} ${e.y})"`:''}>${e.txt}</text>`;
+  });
+  svg += `</svg>`;
+  document.getElementById('map-svg-wrap').innerHTML = svg;
+
+  // Parcelas sin posición en el plano (catálogo o registros que no están dibujados)
+  const dibujadas = new Set(MAPA_CELDAS.map(c=>c.sector+'|'+c.parcela));
+  const fuera = new Map();
+  STATE.ubicaciones.forEach(u=>{ const k = u.SECTOR+'|'+claveParcela(u.PARCELA); if (!dibujadas.has(k)) fuera.set(k, {sector:u.SECTOR, parcela:claveParcela(u.PARCELA)}); });
+  Object.values(agg).forEach(g=>{ const k = g.sector+'|'+g.parcela; if (!dibujadas.has(k)) fuera.set(k, {sector:g.sector, parcela:g.parcela}); });
+  const fueraArr = [...fuera.values()].filter(f=>!sectorFiltro || f.sector===sectorFiltro)
+    .sort((a,b)=>a.sector.localeCompare(b.sector) || a.parcela.localeCompare(b.parcela, undefined, {numeric:true}));
+  document.getElementById('map-fuera').innerHTML = fueraArr.length ? `
+    <div class="section-label" style="margin:0 0 8px;">Parcelas sin posición en el plano</div>
+    <div class="chips">${fueraArr.map(f=>{
+      const n = agg[f.sector+'|'+f.parcela] ? agg[f.sector+'|'+f.parcela].registros.length : 0;
+      const nv = nivelCriticidad(n);
+      return `<span class="chip" style="background:${nv.color};color:${nv.text};border-color:${nv.color}" title="${n} intervención(es)" onclick="seleccionarParcela('${escHtml(f.sector)}','${escHtml(f.parcela)}')">${escHtml(f.sector)} · ${escHtml(f.parcela)}${n ? ' ('+n+')' : ''}</span>`;
+    }).join('')}</div>` : '';
+
+  // Ranking
+  const rk = document.getElementById('map-ranking');
+  if (!grupos.length){
+    rk.innerHTML = '<div class="empty-note" style="padding:24px 0;">No hay parcelas intervenidas con estos filtros.</div>';
+  } else {
+    rk.innerHTML = `<table class="rank-table"><thead><tr><th>#</th><th>Parcela</th><th>Mód.</th><th style="text-align:right">Int.</th><th>Criticidad</th><th>Última</th></tr></thead><tbody>
+      ${grupos.map((g,i)=>{
+        const nv = nivelCriticidad(g.registros.length);
+        const ub = ubicacionDe(g.sector, g.parcela);
+        const sel = MAPA_SEL && MAPA_SEL.sector===g.sector && MAPA_SEL.parcela===g.parcela;
+        return `<tr class="${sel?'sel':''}" onclick="seleccionarParcela('${escHtml(g.sector)}','${escHtml(g.parcela)}')">
+          <td>${i+1}</td><td><b>${escHtml(g.sector)}</b> · ${escHtml(g.parcela)}</td><td>${ub ? escHtml(ub.MODULO) : '—'}</td>
+          <td class="num">${g.registros.length}</td>
+          <td><span class="nivel-pill" style="background:${nv.color};color:${nv.text}">${nv.label}</span></td>
+          <td style="white-space:nowrap">${escHtml(formatearFechaRegistro(g.registros[0].FECHA).slice(0,10))}</td></tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
+  renderDetalleParcela(agg);
+}
+
+function seleccionarParcela(sector, parcela){
+  MAPA_SEL = (MAPA_SEL && MAPA_SEL.sector===sector && MAPA_SEL.parcela===parcela) ? null : {sector, parcela};
+  renderMapa();
+  if (MAPA_SEL && window.matchMedia('(max-width:1100px)').matches){
+    document.getElementById('map-detail').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+}
+
+function renderDetalleParcela(agg){
+  const el = document.getElementById('map-detail');
+  if (!MAPA_SEL){
+    el.innerHTML = '<h3>Detalle de parcela</h3><div class="empty-note" style="padding:18px 0;">Toca una parcela del plano o del ranking para ver sus intervenciones.</div>';
+    return;
+  }
+  const {sector, parcela} = MAPA_SEL;
+  const g = agg[sector+'|'+parcela];
+  const regs = g ? g.registros : [];
+  const nv = nivelCriticidad(regs.length);
+  const ub = ubicacionDe(sector, parcela);
+  const tipos = sortedEntries(countBy(regs, 'TIPO_FUGA'));
+  const mats = {};
+  regs.forEach(r=>parseMateriales(r.MATERIALES).forEach(({nombre,cant})=>{ if (nombre!=='SIN MATERIAL') mats[nombre]=(mats[nombre]||0)+cant; }));
+  const matsTop = sortedEntries(mats, 5);
+  el.innerHTML = `
+    <div class="det-head">
+      <div><div class="det-title">${escHtml(sector)} · Parcela ${escHtml(parcela)}</div>
+        <div class="det-sub">Módulo ${ub ? escHtml(ub.MODULO) : '—'} · ${ub ? escHtml(ub.PATRON) : '—'}</div></div>
+      <span class="nivel-pill" style="background:${nv.color};color:${nv.text};font-size:12px;padding:4px 10px;">${nv.label}</span>
+    </div>
+    <div class="det-grid">
+      <div><div class="l">Intervenciones</div><div class="v">${regs.length}</div></div>
+      <div><div class="l">Última</div><div class="v" style="font-size:13px;">${regs.length ? escHtml(formatearFechaRegistro(regs[0].FECHA)) : '—'}</div></div>
+      <div><div class="l">Tipos distintos</div><div class="v">${tipos.length}</div></div>
+    </div>
+    ${tipos.length ? `<div class="section-label" style="margin-top:0">Por tipo de fuga</div>
+      <div class="chips" style="margin-bottom:10px;">${tipos.map(([t,n])=>`<span class="chip" style="cursor:default">${escHtml(t)} · <b>${n}</b></span>`).join('')}</div>` : ''}
+    ${matsTop.length ? `<div class="section-label">Materiales usados</div>
+      <div class="det-list" style="margin-bottom:6px;">${matsTop.map(([m,n])=>`<div>${escHtml(m)} — <b>${n}</b></div>`).join('')}</div>` : ''}
+    ${regs.length ? `<div class="section-label">Últimas intervenciones</div>
+      <div class="det-list">${regs.slice(0,8).map(r=>`<div class="it"><div class="t">${escHtml(r.TIPO_FUGA)} — ${escHtml(r.DESCRIPCION_FUGA)}</div>
+        <div class="s">${escHtml(formatearFechaRegistro(r.FECHA))} · ${escHtml(r.REPORTADO_POR||'Sin dato')} · ${escHtml(r.CODIGO)}</div></div>`).join('')}</div>
+      <div class="actions" style="justify-content:flex-start;"><button class="btn btn-secondary" style="padding:7px 12px;font-size:12.5px;" onclick="verParcelaEnHistorial('${escHtml(sector)}','${escHtml(parcela)}')">🗂 Ver en Historial</button></div>`
+      : '<div class="empty-note" style="padding:12px 0;">Esta parcela no tiene intervenciones con los filtros actuales.</div>'}
+  `;
+}
+
+function verParcelaEnHistorial(sector, parcela){
+  limpiarFiltrosHistorial();
+  document.getElementById('h-sector').value = sector;
+  // Usa el valor tal cual está en la hoja (p.ej. "5.10.") y un espacio final
+  // para no mezclar 3.1 con 3.11 / 3.12 / 3.13.
+  const reg = STATE.registros.find(r=>r.SECTOR===sector && claveParcela(r.PARCELA)===parcela);
+  document.getElementById('h-buscar').value = sector + ' ' + (reg ? String(reg.PARCELA).trim() : parcela) + ' ';
+  renderHistorial(true);
+  document.querySelector('.nav-btn[data-view="history-view"]').click();
+}
+
+/* =============================================================
    INICIO
    ============================================================= */
 construirSelectorIndicadores();
@@ -1161,6 +1609,12 @@ construirSelectorIndicadores();
   document.getElementById(id).addEventListener('change', ()=>renderHistorial(true));
 });
 document.getElementById('h-buscar').addEventListener('input', ()=>renderHistorial(true));
+['m-desde','m-hasta','m-temporada','m-semana','m-sector','m-tipo'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', renderMapa);
+});
+['u-media','u-alta','u-critica'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', leerUmbralesUI);
+});
 
 poblarFormularioCatalogos();
 cargarDatos();
