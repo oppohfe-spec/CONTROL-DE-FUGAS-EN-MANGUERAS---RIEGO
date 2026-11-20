@@ -260,7 +260,9 @@ details[open] > .indicators-summary::before{content:'▾';}
           <div class="field"><label>Tipo de fuga</label><select id="f-tipo"><option value="">Todos</option></select></div>
           <div class="field"><label>Reportado por</label><select id="f-reportante"><option value="">Todos</option></select></div>
           <div class="field"><label>Temporada</label><select id="f-temporada"><option value="">Todas</option></select></div>
+          <div class="field"><label>Semana</label><select id="f-semana"><option value="">Todas</option></select></div>
           <div class="filters-actions">
+            <button class="btn btn-secondary" onclick="semanaActualDashboard()">📅 Semana actual</button>
             <button class="btn btn-secondary" onclick="limpiarFiltrosDashboard()">✕ Limpiar filtros</button>
             <button class="btn btn-secondary" onclick="cargarDatos()">↻ Actualizar</button>
             <button class="btn btn-secondary" onclick="window.print()">🖨 Exportar / Imprimir</button>
@@ -360,8 +362,11 @@ details[open] > .indicators-summary::before{content:'▾';}
           <div class="field"><label>Hasta</label><input type="date" id="h-hasta"></div>
           <div class="field"><label>Sector</label><select id="h-sector"><option value="">Todos</option></select></div>
           <div class="field"><label>Tipo de fuga</label><select id="h-tipo"><option value="">Todos</option></select></div>
+          <div class="field"><label>Temporada</label><select id="h-temporada"><option value="">Todas</option></select></div>
+          <div class="field"><label>Semana</label><select id="h-semana"><option value="">Todas</option></select></div>
           <div class="filters-actions">
             <span class="count-badge" id="h-count">0 registros</span>
+            <button class="btn btn-secondary" onclick="semanaActualHistorial()">📅 Semana actual</button>
             <button class="btn btn-secondary" onclick="limpiarFiltrosHistorial()">✕ Limpiar filtros</button>
             <button class="btn btn-secondary" onclick="cargarDatos()">↻ Actualizar</button>
           </div>
@@ -392,6 +397,7 @@ details[open] > .indicators-summary::before{content:'▾';}
           <div class="field"><label>Sector</label><select id="m-sector"><option value="">Todos</option></select></div>
           <div class="field"><label>Tipo de fuga</label><select id="m-tipo"><option value="">Todos</option></select></div>
           <div class="filters-actions">
+            <button class="btn btn-secondary" onclick="semanaActualMapa()">📅 Semana actual</button>
             <button class="btn btn-secondary" onclick="limpiarFiltrosMapa()">✕ Limpiar filtros</button>
             <button class="btn btn-secondary" onclick="cargarDatos()">↻ Actualizar</button>
             <button class="btn btn-secondary" onclick="window.print()">🖨 Imprimir</button>
@@ -434,7 +440,7 @@ details[open] > .indicators-summary::before{content:'▾';}
    ============================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHajRUOjCb67e0Vtp4y3R9UKL3wZYkcRZT17epLXPsv5NbLr8ZxbhqT24tSeXMGcPM/exec'; // URL de tu implementación de Apps Script
 const WHATSAPP_NUMERO = '';  // ej. '51987654321' (sin +, sin espacios). Déjalo vacío para elegir el contacto/grupo cada vez.
-const CACHE_KEY = 'cf_riego_cache_v1';
+const CACHE_KEY = 'cf_riego_cache_v2'; // v2: guarda los registros MÁS RECIENTES (v1 guardaba los más antiguos)
 const CACHE_MAX_REGISTROS = 3000; // tope de registros guardados en el caché local del navegador
 
 /* Catálogos por defecto — se usan mientras no hay conexión con Google Sheets
@@ -502,32 +508,78 @@ function formatearFechaHora(iso){
   catch(e){ return iso || ''; }
 }
 
-// Formatea el campo FECHA de un registro para mostrarlo en pantalla, siempre
-// en hora de Perú, sin importar desde dónde se abra la app ni en qué formato
-// exacto haya quedado guardada la fecha:
-//  - "yyyy-MM-dd HH:mm:ss" (formato actual, ya en hora de Perú): se reformatea
-//    tal cual, como texto, sin ninguna conversión de zona horaria.
-//  - "yyyy-MM-dd" (registros antiguos, sin hora): se reformatea igual.
-//  - Cualquier otro valor (p.ej. un ISO con "Z" de una celda que Google
-//    Sheets llegó a convertir en fecha): se interpreta como instante y se
-//    muestra convertido a hora de Perú.
-function formatearFechaRegistro(valor){
-  if (!valor) return '—';
+/* ---- Fechas ----
+   La hoja "Registros" mezcla formatos de FECHA:
+     - "yyyy-MM-dd HH:mm:ss"  (registros creados desde la app, hora de Perú)
+     - "d/MM/yyyy"            (historial importado desde Excel)
+     - ISO con "Z"            (celdas que Sheets convirtió en fecha)
+   fechaNorm() los lleva TODOS a "yyyy-MM-dd HH:mm:ss" (hora de Perú) para poder
+   filtrar por rango, ordenar y mostrar correctamente. */
+const TZ_PERU = 'America/Lima';
+const _fmtLima = new Intl.DateTimeFormat('en-CA', {timeZone: TZ_PERU, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'});
+function p2(n){ return String(n).padStart(2,'0'); }
+function partesLima(date){
+  const o = {};
+  _fmtLima.formatToParts(date).forEach(x=>{ o[x.type] = x.value; });
+  return {y:o.year, m:o.month, d:o.day, hh:o.hour, mm:o.minute, ss:o.second};
+}
+function fechaNorm(valor){
+  if (valor == null || valor === '') return '';
   const s = String(valor).trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*$/);
-  if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
-  m = s.match(/^(\d{4})-(\d{2})-(\d{2})\s*$/);
-  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  try{
-    return new Date(s).toLocaleString('es-PE', {timeZone:'America/Lima', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
-  }catch(e){ return s; }
+  if (!s) return '';
+  let m;
+  const conZona = /T.*(Z|[+-]\d{2}:?\d{2})$/i.test(s);
+  if (!conZona){
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) return `${m[1]}-${p2(m[2])}-${p2(m[3])} ${p2(m[4]||0)}:${m[5]||'00'}:${m[6]||'00'}`;
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) return `${m[3]}-${p2(m[2])}-${p2(m[1])} ${p2(m[4]||0)}:${m[5]||'00'}:${m[6]||'00'}`;
+  }
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return '';
+  const q = partesLima(d);
+  return `${q.y}-${q.m}-${q.d} ${q.hh}:${q.mm}:${q.ss}`;
 }
 
-// Solo la parte "yyyy-MM-dd" de un valor de FECHA, para comparar contra los
-// filtros <input type="date"> (que siempre entregan "yyyy-MM-dd") sin que
-// importe si FECHA ya incluye hora.
+// Muestra FECHA como dd/mm/yyyy [hh:mm] (la hora solo si el registro la tiene).
+function formatearFechaRegistro(valor){
+  const n = fechaNorm(valor);
+  if (!n) return valor ? String(valor) : '—';
+  const f = `${n.slice(8,10)}/${n.slice(5,7)}/${n.slice(0,4)}`;
+  return /\d{1,2}:\d{2}/.test(String(valor)) ? f + ' ' + n.slice(11,16) : f;
+}
+
+// Solo la parte "yyyy-MM-dd", para comparar contra los <input type="date">.
 function soloFecha(valor){
-  return String(valor||'').slice(0,10);
+  return fechaNorm(valor).slice(0,10);
+}
+
+// Ordena del más reciente al más antiguo (decorate-sort-undecorate: 13 mil
+// registros, se calcula la clave una sola vez por registro).
+function ordenarRegistros(arr){
+  return (arr||[]).map(r=>({r, k: fechaNorm(r.FECHA) + '|' + String(r.CODIGO||'')}))
+    .sort((a,b)=> a.k < b.k ? 1 : (a.k > b.k ? -1 : 0))
+    .map(x=>x.r);
+}
+
+/* ---- Semana ISO y temporada actuales (misma regla que Code.gs) ----
+   La temporada va de la semana ISO 27 a la 26 del año siguiente (T2627 =
+   semana 27/2026 a semana 26/2027). Se calcula con el día calendario de Perú. */
+function semanaISOInfo(anio, mesNum, dia){
+  const d = new Date(Date.UTC(anio, mesNum - 1, dia));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const semana = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return {semana, isoYear};
+}
+function periodoActual(){
+  const q = partesLima(new Date());
+  const iso = semanaISOInfo(Number(q.y), Number(q.m), Number(q.d));
+  const yIni = iso.semana >= 27 ? iso.isoYear : iso.isoYear - 1;
+  const temporada = 'T' + String(yIni).slice(-2) + String(yIni + 1).slice(-2);
+  return {semana: String(iso.semana), temporada};
 }
 
 /* =============================================================
@@ -541,7 +593,7 @@ async function cargarDatos(){
     STATE.ubicaciones = (cache.ubicaciones && cache.ubicaciones.length) ? cache.ubicaciones : DEFAULT_UBICACIONES;
     STATE.fallas = (cache.fallas && cache.fallas.length) ? cache.fallas : DEFAULT_FALLAS;
     STATE.personal = (cache.personal && cache.personal.length) ? cache.personal : DEFAULT_PERSONAL;
-    STATE.registros = cache.registros || [];
+    STATE.registros = ordenarRegistros(cache.registros);
     poblarFormularioCatalogos(); renderDashboard(); renderHistorial(true);
     subtitle.textContent = STATE.registros.length + ' registros (guardados ' + formatearFechaHora(cache.ts) + ') — actualizando…';
   }
@@ -567,7 +619,7 @@ async function cargarDatos(){
     STATE.ubicaciones = (json.ubicaciones && json.ubicaciones.length) ? json.ubicaciones : DEFAULT_UBICACIONES;
     STATE.fallas = (json.fallas && json.fallas.length) ? json.fallas : DEFAULT_FALLAS;
     STATE.personal = (json.personal && json.personal.length) ? json.personal : DEFAULT_PERSONAL;
-    STATE.registros = json.registros || [];
+    STATE.registros = ordenarRegistros(json.registros);
     guardarCache();
     subtitle.textContent = STATE.registros.length + ' registros — actualizado ' + new Date().toLocaleTimeString('es-PE');
     poblarFormularioCatalogos();
@@ -598,6 +650,17 @@ function materialesCatalogo(){
 }
 
 function poblarFormularioCatalogos(){
+  // Los catálogos se vuelven a poblar cada vez que llegan datos del servidor (carga
+  // inicial, "Actualizar"). Con miles de registros esa respuesta puede tardar varios
+  // segundos: si el usuario ya había elegido Sector/Tipo en el formulario, antes se
+  // le borraban de golpe y al presionar "Registrar" salía "Selecciona sector y parcela".
+  // Ahora se recuerdan las selecciones actuales y se restauran.
+  const prev = {
+    sector: document.getElementById('sel-sector').value,
+    parcela: document.getElementById('sel-parcela').value,
+    tipo: document.getElementById('sel-tipo').value,
+    desc: document.getElementById('sel-descripcion').value
+  };
   // Reportado por (personal ejecutante) — viene de la hoja "Personal" (editable, con
   // rotación de personal) y siempre incluye la opción de escribir un nombre manualmente.
   const selRep = document.getElementById('sel-reportante');
@@ -605,7 +668,7 @@ function poblarFormularioCatalogos(){
   const valorPrevio = selRep.value;
   const nombres = [...new Set((STATE.personal||[]).map(p=>p.NOMBRE).filter(Boolean))].sort();
   selRep.innerHTML = '<option value="">Selecciona al personal ejecutante…</option>' +
-    nombres.map(n=>`<option value="${n}">${n}</option>`).join('') +
+    nombres.map(n=>`<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('') +
     '<option value="__otro__">Otro (no está en la lista)</option>';
   if (valorPrevio) selRep.value = valorPrevio;
   selRep.onchange = ()=>{
@@ -617,7 +680,7 @@ function poblarFormularioCatalogos(){
   // Sector
   const selSector = document.getElementById('sel-sector');
   const sectores = [...new Set(STATE.ubicaciones.map(u=>u.SECTOR))].sort();
-  selSector.innerHTML = '<option value="">Selecciona…</option>' + sectores.map(s=>`<option value="${s}">${s}</option>`).join('');
+  selSector.innerHTML = '<option value="">Selecciona…</option>' + sectores.map(s=>`<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
   selSector.onchange = ()=>{
     const sel = document.getElementById('sel-parcela');
     const items = STATE.ubicaciones.filter(u=>u.SECTOR===selSector.value);
@@ -627,7 +690,7 @@ function poblarFormularioCatalogos(){
       return;
     }
     sel.disabled = false;
-    sel.innerHTML = '<option value="">Selecciona…</option>' + items.map(u=>`<option value="${u.PARCELA}">${u.PARCELA}</option>`).join('');
+    sel.innerHTML = '<option value="">Selecciona…</option>' + items.map(u=>`<option value="${escHtml(u.PARCELA)}">${escHtml(u.PARCELA)}</option>`).join('');
     sel.onchange = ()=>{
       const item = items.find(u=>String(u.PARCELA)===sel.value);
       document.getElementById('ro-patron').textContent = item ? item.PATRON : '—';
@@ -635,11 +698,16 @@ function poblarFormularioCatalogos(){
     };
     document.getElementById('ro-patron').textContent='—'; document.getElementById('ro-modulo').textContent='—';
   };
+  if (prev.sector && sectores.map(String).includes(prev.sector)){
+    selSector.value = prev.sector; selSector.onchange();
+    const selP = document.getElementById('sel-parcela');
+    if (prev.parcela && [...selP.options].some(o=>o.value===prev.parcela)){ selP.value = prev.parcela; selP.onchange(); }
+  }
 
   // Tipo de fuga -> Descripción (las claves vienen del encabezado real de la hoja "TiposFuga")
   const selTipo = document.getElementById('sel-tipo');
   const tipos = [...new Set(STATE.fallas.map(f=>f.TIPO_FUGA))].sort();
-  selTipo.innerHTML = '<option value="">Selecciona…</option>' + tipos.map(t=>`<option value="${t}">${t}</option>`).join('');
+  selTipo.innerHTML = '<option value="">Selecciona…</option>' + tipos.map(t=>`<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
   selTipo.onchange = ()=>{
     const selDesc = document.getElementById('sel-descripcion');
     const items = STATE.fallas.filter(f=>f.TIPO_FUGA===selTipo.value);
@@ -648,9 +716,14 @@ function poblarFormularioCatalogos(){
       return;
     }
     selDesc.disabled = false;
-    selDesc.innerHTML = '<option value="">Selecciona…</option>' + items.map(f=>`<option value="${f.DESCRIPCION}">${f.DESCRIPCION}</option>`).join('');
+    selDesc.innerHTML = '<option value="">Selecciona…</option>' + items.map(f=>`<option value="${escHtml(f.DESCRIPCION)}">${escHtml(f.DESCRIPCION)}</option>`).join('');
     selDesc.onchange = null; // el material ya no se autosugiere: se agrega manualmente con "+ Agregar material"
   };
+  if (prev.tipo && tipos.map(String).includes(prev.tipo)){
+    selTipo.value = prev.tipo; selTipo.onchange();
+    const selD = document.getElementById('sel-descripcion');
+    if (prev.desc && [...selD.options].some(o=>o.value===prev.desc)) selD.value = prev.desc;
+  }
 }
 
 /* Filas de materiales (selección + cantidad, repetible).
@@ -667,7 +740,7 @@ function agregarFilaMaterial(preseleccion){
       <select class="mat-select">
         <option value="">Selecciona un material…</option>
         <option value="__sin_material__">SIN MATERIAL</option>
-        ${opciones.map(o=>`<option value="${o}"${o===seleccionValida?' selected':''}>${o}</option>`).join('')}
+        ${opciones.map(o=>`<option value="${escHtml(o)}"${o===seleccionValida?' selected':''}>${escHtml(o)}</option>`).join('')}
         <option value="__otro__">Otro (especificar)</option>
       </select>
       <input type="number" min="0" value="1" class="mat-cantidad">
@@ -751,7 +824,8 @@ function editarRegistro(codigo){
   selSector.value = r.SECTOR || '';
   selSector.dispatchEvent(new Event('change'));
   const selParcela = document.getElementById('sel-parcela');
-  selParcela.value = String(r.PARCELA);
+  const optParcela = [...selParcela.options].find(o=>o.value!=='' && claveParcela(o.value)===claveParcela(r.PARCELA));
+  selParcela.value = optParcela ? optParcela.value : '';
   selParcela.dispatchEvent(new Event('change'));
 
   // Diagnóstico: Tipo -> Descripción
@@ -849,17 +923,38 @@ async function enviarRegistro(conWhatsapp){
   }
 
   const btnB = document.getElementById('btn-whatsapp');
+  if (btnB.disabled) return; // ya hay un envío en curso (evita registros duplicados por doble clic)
   btnB.disabled = true;
   mostrarBannerForm(editando ? 'Guardando cambios…' : 'Guardando registro…', 'info');
 
+  // Los navegadores (sobre todo en celular) bloquean window.open() si se llama
+  // DESPUÉS de esperar la respuesta del servidor. Se abre la pestaña ahora, en el
+  // mismo clic, y se rellena con el mensaje de WhatsApp cuando el registro se guarda.
+  let waWin = null;
+  if (conWhatsapp){ try{ waWin = window.open('about:blank', '_blank'); }catch(e){ waWin = null; } }
+
+  let json;
   try{
     const res = await fetch(SCRIPT_URL, {
       method: 'POST',
       headers: {'Content-Type':'text/plain;charset=utf-8'}, // evita el preflight CORS en Apps Script
       body: JSON.stringify(payload)
     });
-    const json = await res.json();
+    const texto = await res.text();
+    try{ json = JSON.parse(texto); }
+    catch(e){ throw new Error('el servidor no devolvió una respuesta válida. Revisa que la implementación del Apps Script esté publicada con acceso "Cualquier usuario" y con la última versión.'); }
     if (!json.ok) throw new Error(json.error || 'Error desconocido');
+  }catch(err){
+    if (waWin){ try{ waWin.close(); }catch(e){} }
+    const msg = (err && err.message === 'Failed to fetch') ? 'no hay conexión con el servidor (Google Apps Script). Revisa tu internet y vuelve a intentar.' : err.message;
+    mostrarBannerForm('No se pudo guardar: ' + msg, 'err');
+    btnB.disabled = false;
+    return;
+  }
+
+  // A partir de aquí el registro YA está guardado en Google Sheets. Cualquier fallo
+  // al refrescar pantalla no debe mostrarse como "No se pudo guardar".
+  try{
 
     if (editando){
       const idx = STATE.registros.findIndex(x=>String(x.CODIGO)===String(json.registro.CODIGO));
@@ -868,7 +963,7 @@ async function enviarRegistro(conWhatsapp){
       STATE.registros.unshift(json.registro);
     }
     guardarCache();
-    if (conWhatsapp) abrirWhatsapp(json.registro);
+    if (conWhatsapp) abrirWhatsapp(json.registro, waWin);
 
     if (editando){
       limpiarFormulario(); // sale del modo edición y limpia todo
@@ -880,7 +975,7 @@ async function enviarRegistro(conWhatsapp){
     renderDashboard();
     renderHistorial(true);
   }catch(err){
-    mostrarBannerForm('No se pudo guardar: ' + err.message, 'err');
+    console.error('Registro guardado, pero falló el refresco de pantalla:', err);
   }finally{
     btnB.disabled = false;
   }
@@ -894,7 +989,7 @@ function limpiarFormularioParcial(){
   document.getElementById('materiales-rows').innerHTML='';
 }
 
-function abrirWhatsapp(r){
+function abrirWhatsapp(r, ventana){
   const lineas = [
     '🔧 *Nuevo registro de fuga*',
     '🆔 *Código:* ' + r.CODIGO,
@@ -908,7 +1003,9 @@ function abrirWhatsapp(r){
   lineas.push('📅 *Fecha:* ' + formatearFechaRegistro(r.FECHA) + '  |  Semana ' + r.SEMANA + '  |  Temporada ' + r.TEMPORADA);
   const texto = encodeURIComponent(lineas.join('\n'));
   const base = WHATSAPP_NUMERO ? ('https://wa.me/' + WHATSAPP_NUMERO) : 'https://wa.me/';
-  window.open(base + '?text=' + texto, '_blank');
+  const url = base + '?text=' + texto;
+  if (ventana && !ventana.closed){ ventana.location.href = url; }
+  else { window.open(url, '_blank'); }
 }
 
 /* =============================================================
@@ -926,13 +1023,34 @@ function sortedEntries(obj, topN){
   if (topN) arr = arr.slice(0, topN);
   return arr;
 }
-function poblarSelectDesdeRegistros(selectId, field, allLabel){
+function poblarSelectDesdeRegistros(selectId, field, allLabel, extras){
   const el = document.getElementById(selectId);
   const cur = el.value;
-  const valores = [...new Set(STATE.registros.map(r=>r[field]).filter(Boolean))].sort();
-  el.innerHTML = `<option value="">${allLabel}</option>` + valores.map(v=>`<option value="${v}">${v}</option>`).join('');
+  // "extras": valores que deben existir como opción aunque todavía no haya registros
+  // (p.ej. la temporada actual), para que el filtro por defecto siempre se pueda aplicar.
+  const valores = [...new Set([...STATE.registros.map(r=>r[field]).filter(Boolean), ...(extras||[])])].sort().reverse();
+  el.innerHTML = `<option value="">${allLabel}</option>` + valores.map(v=>`<option value="${escHtml(v)}">${escHtml(v)}</option>`).join('');
   el.value = cur;
 }
+function poblarSelectSemanas(selectId, extra){
+  const el = document.getElementById(selectId);
+  const cur = el.value;
+  const semanas = [...new Set([...STATE.registros.map(r=>String(r.SEMANA||'')).filter(Boolean), ...(extra ? [String(extra)] : [])])].sort((a,b)=>Number(a)-Number(b));
+  el.innerHTML = '<option value="">Todas</option>' + semanas.map(s=>`<option value="${s}">Semana ${s}</option>`).join('');
+  el.value = cur;
+}
+// Filtros por defecto de TODAS las pestañas (Dashboard, Historial, Mapa):
+// temporada y semana ISO actuales (según la fecha de hoy en hora de Perú).
+function aplicarPeriodoActual(prefijo){
+  const {semana, temporada} = periodoActual();
+  poblarSelectDesdeRegistros(prefijo+'-temporada', 'TEMPORADA', 'Todas', [temporada]);
+  poblarSelectSemanas(prefijo+'-semana', semana);
+  document.getElementById(prefijo+'-temporada').value = temporada;
+  document.getElementById(prefijo+'-semana').value = semana;
+}
+function semanaActualDashboard(){ aplicarPeriodoActual('f'); renderDashboard(); }
+function semanaActualHistorial(){ aplicarPeriodoActual('h'); renderHistorial(true); }
+function semanaActualMapa(){ aplicarPeriodoActual('m'); renderMapa(); }
 function colorForKey(key, keysOrdenadas){
   const idx = keysOrdenadas.indexOf(key);
   return PALETA[idx >= 0 ? idx % PALETA.length : 0];
@@ -958,23 +1076,25 @@ function poblarFiltrosDashboard(){
   poblarSelectDesdeRegistros('f-sector', 'SECTOR', 'Todos');
   poblarSelectDesdeRegistros('f-tipo', 'TIPO_FUGA', 'Todos');
   poblarSelectDesdeRegistros('f-reportante', 'REPORTADO_POR', 'Todos');
-  poblarSelectDesdeRegistros('f-temporada', 'TEMPORADA', 'Todas');
+  poblarSelectDesdeRegistros('f-temporada', 'TEMPORADA', 'Todas', [periodoActual().temporada]);
+  poblarSelectSemanas('f-semana', periodoActual().semana);
 }
 
 function limpiarFiltrosDashboard(){
-  ['f-desde','f-hasta','f-sector','f-tipo','f-reportante','f-temporada'].forEach(id=>{
+  ['f-desde','f-hasta','f-sector','f-tipo','f-reportante','f-temporada','f-semana'].forEach(id=>{
     document.getElementById(id).value = '';
   });
   renderDashboard();
 }
 
-function registrosFiltrados(){
+function registrosFiltrados(ignorarSemana){
   const desde = document.getElementById('f-desde').value;
   const hasta = document.getElementById('f-hasta').value;
   const sector = document.getElementById('f-sector').value;
   const tipo = document.getElementById('f-tipo').value;
   const reportante = document.getElementById('f-reportante').value;
   const temporada = document.getElementById('f-temporada').value;
+  const semana = ignorarSemana ? '' : document.getElementById('f-semana').value;
   return STATE.registros.filter(r=>{
     if (desde && soloFecha(r.FECHA) < desde) return false;
     if (hasta && soloFecha(r.FECHA) > hasta) return false;
@@ -982,6 +1102,7 @@ function registrosFiltrados(){
     if (tipo && r.TIPO_FUGA !== tipo) return false;
     if (reportante && r.REPORTADO_POR !== reportante) return false;
     if (temporada && r.TEMPORADA !== temporada) return false;
+    if (semana && String(r.SEMANA) !== semana) return false;
     return true;
   });
 }
@@ -1004,7 +1125,8 @@ function renderDashboard(){
   renderChartTipo(datos);
   renderChartModulo(datos);
   renderChartReportante(datos);
-  renderChartTendencia(datos);
+  // La tendencia semanal ignora el filtro de semana (si no, mostraría un solo punto).
+  renderChartTendencia(registrosFiltrados(true));
   renderChartDescripcion(datos);
   renderChartMateriales(datos);
   // El mapa de parcelas se refresca junto con el dashboard (carga, registro, edición, eliminación).
@@ -1072,13 +1194,20 @@ function renderChartReportante(datos){
     options: baseOptions(true)});
 }
 function renderChartTendencia(datos){
-  const m = {};
+  // Una barra/punto por (temporada, semana), ordenado cronológicamente por la fecha
+  // más antigua de cada grupo (así "S9" no queda después de "S47").
+  const g = {};
   datos.forEach(r=>{
-    const key = (r.ANIO||'') + '-S' + (r.SEMANA||'');
-    m[key] = (m[key]||0)+1;
+    const key = (r.TEMPORADA||'') + '|' + (r.SEMANA||'');
+    const f = fechaNorm(r.FECHA);
+    if (!g[key]) g[key] = {temp:r.TEMPORADA||'', sem:r.SEMANA||'', n:0, f:f};
+    g[key].n++;
+    if (f && (!g[key].f || f < g[key].f)) g[key].f = f;
   });
-  const claves = Object.keys(m).sort();
-  upsertChart('chart-tendencia', {type:'line', data:{labels: claves, datasets:[{data: claves.map(k=>m[k]), borderColor:'#2a78d6', backgroundColor:'#2a78d620', fill:true, tension:.3, pointRadius:3}]},
+  const grupos = Object.values(g).sort((a,b)=> a.f < b.f ? -1 : (a.f > b.f ? 1 : 0));
+  const variasTemp = new Set(grupos.map(x=>x.temp)).size > 1;
+  const labels = grupos.map(x=>'S' + x.sem + (variasTemp ? ' · ' + x.temp : ''));
+  upsertChart('chart-tendencia', {type:'line', data:{labels, datasets:[{data: grupos.map(x=>x.n), borderColor:'#2a78d6', backgroundColor:'#2a78d620', fill:true, tension:.3, pointRadius:3}]},
     options: baseOptions(false)});
 }
 function renderChartDescripcion(datos){
@@ -1120,11 +1249,13 @@ function renderChartMateriales(datos){
 function poblarFiltrosHistorial(){
   poblarSelectDesdeRegistros('h-sector', 'SECTOR', 'Todos');
   poblarSelectDesdeRegistros('h-tipo', 'TIPO_FUGA', 'Todos');
+  poblarSelectDesdeRegistros('h-temporada', 'TEMPORADA', 'Todas', [periodoActual().temporada]);
+  poblarSelectSemanas('h-semana', periodoActual().semana);
 }
 
 function limpiarFiltrosHistorial(){
   document.getElementById('h-buscar').value = '';
-  ['h-desde','h-hasta','h-sector','h-tipo'].forEach(id=>{
+  ['h-desde','h-hasta','h-sector','h-tipo','h-temporada','h-semana'].forEach(id=>{
     document.getElementById(id).value = '';
   });
   renderHistorial(true);
@@ -1136,19 +1267,22 @@ function registrosHistorialFiltrados(){
   const hasta = document.getElementById('h-hasta').value;
   const sector = document.getElementById('h-sector').value;
   const tipo = document.getElementById('h-tipo').value;
-  let arr = STATE.registros.filter(r=>{
+  const temporada = document.getElementById('h-temporada').value;
+  const semana = document.getElementById('h-semana').value;
+  // STATE.registros ya está ordenado del más reciente al más antiguo (ordenarRegistros).
+  return STATE.registros.filter(r=>{
     if (desde && soloFecha(r.FECHA) < desde) return false;
     if (hasta && soloFecha(r.FECHA) > hasta) return false;
     if (sector && r.SECTOR !== sector) return false;
     if (tipo && r.TIPO_FUGA !== tipo) return false;
+    if (temporada && r.TEMPORADA !== temporada) return false;
+    if (semana && String(r.SEMANA) !== semana) return false;
     if (q){
       const texto = [r.CODIGO,r.SECTOR,r.PARCELA,r.TIPO_FUGA,r.DESCRIPCION_FUGA,r.REPORTADO_POR,r.OBSERVACIONES].join(' ').toLowerCase();
       if (!texto.includes(q)) return false;
     }
     return true;
   });
-  arr.sort((a,b)=> String(b.FECHA||'').localeCompare(String(a.FECHA||'')) || String(b.CODIGO||'').localeCompare(String(a.CODIGO||'')));
-  return arr;
 }
 
 function renderHistorial(reset){
@@ -1171,32 +1305,33 @@ function renderHistorial(reset){
   list.innerHTML = visibles.map(r=>{
     const materiales = parseMateriales(r.MATERIALES).filter(m=>m.nombre !== 'SIN MATERIAL');
     const color = colorForKey(r.SECTOR, sectoresOrden);
+    const codAttr = escHtml(String(r.CODIGO||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
     return `
     <div class="history-card" onclick="toggleDetalleHistorial(this)">
-      <div class="history-strip" style="background:${color};">${r.CODIGO||''}</div>
+      <div class="history-strip" style="background:${color};">${escHtml(r.CODIGO)}</div>
       <div class="history-body">
         <div class="history-top">
           <div>
-            <div class="history-title">${r.TIPO_FUGA||''} — Sector ${r.SECTOR||''} · Parcela ${r.PARCELA||''}</div>
-            <div class="history-sub">${r.DESCRIPCION_FUGA||''}</div>
+            <div class="history-title">${escHtml(r.TIPO_FUGA)} — Sector ${escHtml(r.SECTOR)} · Parcela ${escHtml(r.PARCELA)}</div>
+            <div class="history-sub">${escHtml(r.DESCRIPCION_FUGA)}</div>
           </div>
           <div class="history-top-right">
             <div class="history-date">${formatearFechaRegistro(r.FECHA)}</div>
             <div class="history-actions-row">
-              <button type="button" class="icon-btn history-edit-btn" title="Editar registro" onclick="event.stopPropagation(); editarRegistro('${String(r.CODIGO||'').replace(/'/g,"\\'")}')">✏️ Editar</button>
-              <button type="button" class="icon-btn history-delete-btn" title="Eliminar registro" onclick="event.stopPropagation(); eliminarRegistro('${String(r.CODIGO||'').replace(/'/g,"\\'")}')">🗑️ Eliminar</button>
+              <button type="button" class="icon-btn history-edit-btn" title="Editar registro" onclick="event.stopPropagation(); editarRegistro('${codAttr}')">✏️ Editar</button>
+              <button type="button" class="icon-btn history-delete-btn" title="Eliminar registro" onclick="event.stopPropagation(); eliminarRegistro('${codAttr}')">🗑️ Eliminar</button>
             </div>
           </div>
         </div>
         <div class="history-badges">
-          <span>👤 ${r.REPORTADO_POR||'Sin dato'}</span>
-          <span>📍 Módulo ${r.MODULO||'—'} · ${r.PATRON||'—'}</span>
+          <span>👤 ${escHtml(r.REPORTADO_POR||'Sin dato')}</span>
+          <span>📍 Módulo ${escHtml(r.MODULO||'—')} · ${escHtml(r.PATRON||'—')}</span>
           <span>📦 ${materiales.length} material(es)</span>
-          <span>🗓️ Semana ${r.SEMANA||'—'} · ${r.TEMPORADA||'—'}</span>
+          <span>🗓️ Semana ${escHtml(r.SEMANA||'—')} · ${escHtml(r.TEMPORADA||'—')}</span>
         </div>
         <div class="history-detail" style="display:none;">
-          <div><b>Materiales:</b> ${materiales.length ? materiales.map(m=>m.nombre+' (x'+m.cant+')').join(', ') : 'Sin materiales registrados'}</div>
-          <div><b>Observaciones:</b> ${r.OBSERVACIONES ? r.OBSERVACIONES : 'Sin observaciones'}</div>
+          <div><b>Materiales:</b> ${materiales.length ? materiales.map(m=>escHtml(m.nombre)+' (x'+m.cant+')').join(', ') : 'Sin materiales registrados'}</div>
+          <div><b>Observaciones:</b> ${r.OBSERVACIONES ? escHtml(r.OBSERVACIONES) : 'Sin observaciones'}</div>
         </div>
       </div>
     </div>`;
@@ -1394,18 +1529,14 @@ function pintarUmbralesUI(){
 }
 
 function poblarFiltrosMapa(){
-  poblarSelectDesdeRegistros('m-temporada', 'TEMPORADA', 'Todas');
+  poblarSelectDesdeRegistros('m-temporada', 'TEMPORADA', 'Todas', [periodoActual().temporada]);
   poblarSelectDesdeRegistros('m-tipo', 'TIPO_FUGA', 'Todos');
   const selS = document.getElementById('m-sector');
   const curS = selS.value;
   const sectores = [...new Set([...STATE.ubicaciones.map(u=>u.SECTOR), ...STATE.registros.map(r=>r.SECTOR)].filter(Boolean))].sort();
   selS.innerHTML = '<option value="">Todos</option>' + sectores.map(s=>`<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
   selS.value = curS;
-  const selW = document.getElementById('m-semana');
-  const curW = selW.value;
-  const semanas = [...new Set(STATE.registros.map(r=>String(r.SEMANA||'')).filter(Boolean))].sort((a,b)=>Number(a)-Number(b));
-  selW.innerHTML = '<option value="">Todas</option>' + semanas.map(s=>`<option value="${s}">Semana ${s}</option>`).join('');
-  selW.value = curW;
+  poblarSelectSemanas('m-semana', periodoActual().semana);
 }
 function limpiarFiltrosMapa(){
   ['m-desde','m-hasta','m-temporada','m-semana','m-sector','m-tipo'].forEach(id=>{ document.getElementById(id).value = ''; });
@@ -1436,7 +1567,7 @@ function agregarPorParcela(datos){
     const k = r.SECTOR + '|' + p;
     (m[k] = m[k] || {sector:r.SECTOR, parcela:p, registros:[]}).registros.push(r);
   });
-  Object.values(m).forEach(g=>g.registros.sort((a,b)=>String(b.FECHA||'').localeCompare(String(a.FECHA||''))));
+  // los registros de cada parcela ya vienen del más reciente al más antiguo
   return m;
 }
 function ubicacionDe(sector, parcela){
@@ -1602,10 +1733,10 @@ function verParcelaEnHistorial(sector, parcela){
    INICIO
    ============================================================= */
 construirSelectorIndicadores();
-['f-desde','f-hasta','f-sector','f-tipo','f-reportante','f-temporada'].forEach(id=>{
+['f-desde','f-hasta','f-sector','f-tipo','f-reportante','f-temporada','f-semana'].forEach(id=>{
   document.getElementById(id).addEventListener('change', renderDashboard);
 });
-['h-desde','h-hasta','h-sector','h-tipo'].forEach(id=>{
+['h-desde','h-hasta','h-sector','h-tipo','h-temporada','h-semana'].forEach(id=>{
   document.getElementById(id).addEventListener('change', ()=>renderHistorial(true));
 });
 document.getElementById('h-buscar').addEventListener('input', ()=>renderHistorial(true));
@@ -1616,6 +1747,10 @@ document.getElementById('h-buscar').addEventListener('input', ()=>renderHistoria
   document.getElementById(id).addEventListener('change', leerUmbralesUI);
 });
 
+// Filtros por defecto en todas las pestañas: temporada y semana ACTUALES.
+aplicarPeriodoActual('f');
+aplicarPeriodoActual('h');
+aplicarPeriodoActual('m');
 poblarFormularioCatalogos();
 cargarDatos();
 </script>
